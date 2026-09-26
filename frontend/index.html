@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src *; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>Young@Asset Collection</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="logo">
+        <span class="logo-mark">YA</span>
+        <div class="logo-text">
+          <div class="logo-eyebrow">YOUNG@</div>
+          <div class="logo-title">Asset Collection</div>
+        </div>
+      </div>
+      <nav id="nav">
+        <div class="nav-section">探测任务</div>
+        <button class="nav-item active" data-page="subdomain"><span class="nav-ico">🌐</span>子域名收集</button>
+        <button class="nav-item" data-page="portscan"><span class="nav-ico">🔌</span>端口开放探测</button>
+        <button class="nav-item" data-page="service"><span class="nav-ico">🛰️</span>端口服务识别</button>
+        <button class="nav-item" data-page="whois"><span class="nav-ico">📇</span>WHOIS / 备案</button>
+        <div class="nav-section">记录</div>
+        <button class="nav-item" data-page="tasks"><span class="nav-ico">📋</span>任务中心</button>
+      </nav>
+      <footer class="sidebar-foot">
+        <div class="foot-line">仅限授权测试使用</div>
+        <div class="foot-version" id="backend-version"></div>
+      </footer>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1 id="page-title">子域名收集</h1>
+        <div class="health-pill" id="health-pill">
+          <span class="dot" id="health-dot"></span>
+          <span id="health-text">检测后端…</span>
+        </div>
+      </header>
+
+      <!-- ============ 子域名收集 ============ -->
+      <section id="page-subdomain" class="page active">
+        <div class="card">
+          <div class="card-title">任务配置</div>
+          <div class="grid-2">
+            <div class="field span2">
+              <label>主域名 *</label>
+              <input type="text" id="sub-domain" placeholder="example.com" />
+            </div>
+            <div class="field">
+              <label>收集方式</label>
+              <div class="checks">
+                <label><input type="checkbox" id="sub-m-brute" checked /> DNS 字典爆破</label>
+                <label><input type="checkbox" id="sub-m-crtsh" checked /> crt.sh 证书</label>
+                <label><input type="checkbox" id="sub-m-ht" checked /> HackerTarget</label>
+              </div>
+            </div>
+            <div class="field">
+              <label>并发数</label>
+              <input type="number" id="sub-concurrency" value="50" min="1" max="500" />
+            </div>
+            <div class="field">
+              <label>DNS 服务器（可选）</label>
+              <input type="text" id="sub-dns" placeholder="223.5.5.5" />
+            </div>
+            <div class="field">
+              <label>DNS 超时 (ms)</label>
+              <input type="number" id="sub-timeout" value="3000" min="100" />
+            </div>
+            <div class="field span2">
+              <label>自定义字典（每行一个，留空用内置 400+ 字典）</label>
+              <textarea id="sub-wordlist" rows="3" placeholder="www&#10;mail&#10;api"></textarea>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="sub-start">开始收集</button>
+            <button class="btn danger hidden" id="sub-cancel">取消任务</button>
+            <span class="progress-text" id="sub-progress-text"></span>
+            <div class="progress-track grow"><div class="progress-bar" id="sub-progress"></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            结果 <span class="badge" id="sub-count">0</span>
+            <span class="grow"></span>
+            <a class="btn small" id="sub-export-csv" target="_blank">导出 CSV</a>
+            <a class="btn small" id="sub-export-json" target="_blank">导出 JSON</a>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>子域名</th><th>IP</th><th>来源</th></tr></thead>
+              <tbody id="sub-results"></tbody>
+            </table>
+          </div>
+          <div class="logs" id="sub-logs"></div>
+        </div>
+      </section>
+
+      <!-- ============ 端口开放探测 ============ -->
+      <section id="page-portscan" class="page">
+        <div class="card">
+          <div class="card-title">任务配置</div>
+          <div class="grid-2">
+            <div class="field span2">
+              <label>扫描目标 *（支持 IP / 域名 / CIDR，逗号或换行分隔）</label>
+              <textarea id="ps-targets" rows="3" placeholder="192.168.1.1&#10;scanme.org&#10;10.0.0.0/24"></textarea>
+            </div>
+            <div class="field">
+              <label>端口预设</label>
+              <select id="ps-preset">
+                <option value="common" selected>常用端口（约 500 个）</option>
+                <option value="web">Web 常见端口</option>
+                <option value="full">全端口 1-65535</option>
+                <option value="custom">自定义…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>自定义端口</label>
+              <input type="text" id="ps-ports" placeholder="80,443,8000-8100" disabled />
+            </div>
+            <div class="field">
+              <label>连接超时 (ms)</label>
+              <input type="number" id="ps-timeout" value="1000" min="100" />
+            </div>
+            <div class="field">
+              <label>并发数</label>
+              <input type="number" id="ps-workers" value="500" min="1" max="5000" />
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="ps-start">开始扫描</button>
+            <button class="btn danger hidden" id="ps-cancel">取消任务</button>
+            <span class="progress-text" id="ps-progress-text"></span>
+            <div class="progress-track grow"><div class="progress-bar" id="ps-progress"></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            结果 <span class="badge" id="ps-count">0</span>
+            <span class="grow"></span>
+            <a class="btn small" id="ps-export-csv" target="_blank">导出 CSV</a>
+            <a class="btn small" id="ps-export-json" target="_blank">导出 JSON</a>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>主机</th><th>IP</th><th>端口</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody id="ps-results"></tbody>
+            </table>
+          </div>
+          <div class="logs" id="ps-logs"></div>
+        </div>
+      </section>
+
+      <!-- ============ 端口服务识别 ============ -->
+      <section id="page-service" class="page">
+        <div class="card">
+          <div class="card-title">任务配置</div>
+          <div class="grid-2">
+            <div class="field span2">
+              <label>识别目标 *（host:port，每行或逗号一个）</label>
+              <textarea id="sv-targets" rows="3" placeholder="1.2.3.4:80&#10;scanme.org:22"></textarea>
+            </div>
+            <div class="field">
+              <label>从端口扫描任务导入</label>
+              <div class="row">
+                <select id="sv-import"><option value="">— 选择已完成的端口扫描任务 —</option></select>
+                <button class="btn" id="sv-import-btn">导入</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>超时 (ms)</label>
+              <input type="number" id="sv-timeout" value="5000" min="500" />
+            </div>
+            <div class="field">
+              <label>并发数</label>
+              <input type="number" id="sv-workers" value="50" min="1" max="500" />
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="sv-start">开始识别</button>
+            <button class="btn danger hidden" id="sv-cancel">取消任务</button>
+            <span class="progress-text" id="sv-progress-text"></span>
+            <div class="progress-track grow"><div class="progress-bar" id="sv-progress"></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            结果 <span class="badge" id="sv-count">0</span>
+            <span class="grow"></span>
+            <a class="btn small" id="sv-export-csv" target="_blank">导出 CSV</a>
+            <a class="btn small" id="sv-export-json" target="_blank">导出 JSON</a>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>主机</th><th>IP</th><th>端口</th><th>服务</th><th>版本</th><th>标题/Server</th><th>Banner</th></tr></thead>
+              <tbody id="sv-results"></tbody>
+            </table>
+          </div>
+          <div class="logs" id="sv-logs"></div>
+        </div>
+      </section>
+
+      <!-- ============ WHOIS / 备案 ============ -->
+      <section id="page-whois" class="page">
+        <div class="card">
+          <div class="card-title">任务配置</div>
+          <div class="grid-2">
+            <div class="field span2">
+              <label>查询域名 *（每行一个，支持带 www / URL，自动提取注册域）</label>
+              <textarea id="wi-domains" rows="3" placeholder="baidu.com&#10;example.org"></textarea>
+            </div>
+            <div class="field">
+              <label>查询项</label>
+              <div class="checks">
+                <label><input type="checkbox" id="wi-do-whois" checked /> WHOIS 注册信息</label>
+                <label><input type="checkbox" id="wi-do-icp" checked /> ICP 备案查询</label>
+              </div>
+            </div>
+            <div class="field">
+              <label>超时 (ms)</label>
+              <input type="number" id="wi-timeout" value="10000" min="1000" />
+            </div>
+            <div class="field span2">
+              <label>自定义备案 API（可选，含 {domain} 占位符，返回 JSON；留空用内置多源）</label>
+              <input type="text" id="wi-icp-api" placeholder="https://your-api.example.com/icp?domain={domain}" />
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="wi-start">开始查询</button>
+            <button class="btn danger hidden" id="wi-cancel">取消任务</button>
+            <span class="progress-text" id="wi-progress-text"></span>
+            <div class="progress-track grow"><div class="progress-bar" id="wi-progress"></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            结果 <span class="badge" id="wi-count">0</span>
+            <span class="grow"></span>
+            <a class="btn small" id="wi-export-csv" target="_blank">导出 CSV</a>
+            <a class="btn small" id="wi-export-json" target="_blank">导出 JSON</a>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>域名</th><th>注册商</th><th>创建时间</th><th>到期时间</th><th>DNS 服务器</th><th>备案主体</th><th>备案号</th><th>备注</th></tr></thead>
+              <tbody id="wi-results"></tbody>
+            </table>
+          </div>
+          <div class="logs" id="wi-logs"></div>
+        </div>
+      </section>
+
+      <!-- ============ 任务中心 ============ -->
+      <section id="page-tasks" class="page">
+        <div class="card">
+          <div class="card-title">
+            全部任务
+            <span class="grow"></span>
+            <button class="btn small" id="tk-refresh">刷新</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>类型</th><th>状态</th><th>进度</th><th>结果数</th><th>创建时间</th><th>操作</th></tr></thead>
+              <tbody id="tk-list"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card hidden" id="tk-detail-card">
+          <div class="card-title">任务详情 <span class="muted" id="tk-detail-id"></span>
+            <span class="grow"></span>
+            <a class="btn small" id="tk-export-csv" target="_blank">导出 CSV</a>
+            <a class="btn small" id="tk-export-json" target="_blank">导出 JSON</a>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead id="tk-detail-head"></thead>
+              <tbody id="tk-detail-body"></tbody>
+            </table>
+          </div>
+          <div class="logs" id="tk-detail-logs"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>
