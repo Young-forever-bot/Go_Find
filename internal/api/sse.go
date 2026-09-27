@@ -76,5 +76,6 @@ func (s *Server) handleTaskEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func isTerminal(status string) bool {
-	return status == task.StatusDone || status == task.StatusError || status == task.StatusCanceled
+	return status == task.StatusDone || status == task.StatusError ||
+		status == task.StatusCanceled || status == task.StatusInterrupted
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gofind/internal/model"
+	"gofind/internal/pipeline"
 	"gofind/internal/portscan"
 	"gofind/internal/service"
 	"gofind/internal/subdomain"
@@ -24,6 +25,8 @@ func (s *Server) emitter(taskID string) func(model.Event) {
 			}
 		case "result":
 			s.mgr.AddResult(taskID, ev.Data)
+		case "stage":
+			s.mgr.PublishCustom(taskID, ev.Type, ev.Data)
 		}
 	}
 }
@@ -61,5 +64,14 @@ func (s *Server) runWhois(id string, opts whois.Options) {
 	s.mgr.SetCancel(id, cancel)
 	defer cancel()
 	err := whois.Run(ctx, opts, s.emitter(id))
+	s.mgr.Finish(id, err)
+}
+
+// runPipeline 全面测绘流水线任务执行器。
+func (s *Server) runPipeline(id string, opts pipeline.Options) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.mgr.SetCancel(id, cancel)
+	defer cancel()
+	err := pipeline.Run(ctx, opts, s.emitter(id))
 	s.mgr.Finish(id, err)
 }

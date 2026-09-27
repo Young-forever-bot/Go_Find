@@ -372,6 +372,11 @@ func parseICPJSON(body []byte) *model.ICPInfo {
 	return info
 }
 
+// Registrable 暴露注册域归一化（eTLD+1 近似），供流水线等模块复用。
+func Registrable(domain string) string {
+	return registrableDomain(domain)
+}
+
 // registrableDomain 归一化输入并提取注册域（eTLD+1 的实用近似）。
 func registrableDomain(in string) string {
 	d := strings.ToLower(strings.TrimSpace(in))

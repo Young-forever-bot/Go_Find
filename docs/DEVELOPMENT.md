@@ -1,6 +1,6 @@
 # Young@Asset Collection 开发文档
 
-> 版本：v1.0.0 ｜ 更新日期：2026-09-26 ｜ 应用名：Young@Asset Collection（内部模块名 gofind）
+> 版本：v1.1.0 ｜ 更新日期：2026-09-27 ｜ 应用名：Young@Asset Collection（内部模块名 gofind）
 > 一站式资产测绘工具：**子域名收集 + 端口开放探测 + 端口服务识别**
 > 后端 Go（标准库实现，零第三方依赖）＋ 前端 Electron 桌面控制台
 
@@ -26,7 +26,9 @@ Electron 桌面应用作为控制台负责任务下发、实时进度展示与�
 | 子域名收集 | DNS 字典爆破（内置 400+ 字典、支持自定义字典）、crt.sh 证书透明度查询、HackerTarget API 查询、泛解析自动检测与过滤、并发 DNS 解析、结果自动去重合并 |
 | 端口开放探测 | TCP Connect 全连接扫描、目标支持 `IP / 域名 / CIDR 网段 / 混合列表`、端口支持 `单端口 / 区间 / 预设（常用、Web、全端口）/ 自定义`、goroutine 池并发、可调超时与并发数 |
 | 端口服务识别 | Banner 抓取、HTTP/HTTPS 探测（状态码、标题、Server、X-Powered-By）、TLS 证书信息（主体、签发者、SAN、有效期）、内置服务指纹库（SSH/FTP/SMTP/Redis/MySQL/RDP/SMB 等）、按端口的常见服务兜底命名 |
-| WHOIS / 备案 | WHOIS 原生协议查询（IANA → 注册局 referral，端口 43）、结构化字段提取（注册商/创建/到期/状态/NS）、注册域归一化（剥 www、URL、eTLD+1 近似）、ICP 备案多源查询（内置 3 个 API 源按序尝试 + 支持自定义源）、容错 JSON 解析 |
+| WHOIS / 备案 | WHOIS 原生协议查询（IANA → 注册局 referral，端口 43）、结构化字段提取（注册商/创建/到期/状态/NS）、注册域归一化（剥 www、URL、eTLD+1 近似）、ICP 备案多源查询（工信部官方直查 + 多源并发竞速 + 支持自定义源）、容错 JSON 解析 |
+| 🚀 全面测绘 | 一键流水线：子域名收集 → 存活探测（HTTP/HTTPS 择优 + 40+ Web 指纹库）→ 端口扫描 → 服务识别 → WHOIS/备案；阶段状态机事件、结果按阶段打标、汇总统计 |
+| 通用 | 统一任务模型（含 interrupted 恢复态）、SSE 实时进度、CSV/JSON 导出、任务历史 JSON 持久化（%APPDATA%/YoungAssetCollection，原子写入）、全部结果表格关键字过滤 |
 | 通用能力 | 统一任务模型（创建/进度/日志/结果/取消）、SSE 实时事件推送、CSV / JSON 结果导出、任务历史记录 |
 | 前端 | 子域名收集页、端口扫描页、服务识别页、任务中心页；实时进度条与结果表格；一键从端口扫描结果导入服务识别；后端健康状态指示 |
 
@@ -131,6 +133,10 @@ Go_Find/
     ├── service/
     │   ├── service.go            # 服务识别引擎（探测状态机）
     │   └── fingerprint.go        # 指纹库 + 常见端口名表
+    ├── probe/
+    │   └── probe.go              # Web 存活探测 + 指纹识别
+    ├── pipeline/
+    │   └── pipeline.go           # 全面测绘五阶段流水线
     ├── whois/
     │   ├── whois.go              # WHOIS 协议查询 + ICP 多源竞速
     │   └── miit.go               # 工信部官方直查（滑块验证码自动识别）
@@ -393,6 +399,18 @@ POST /api/service
 **WHOIS / 备案查询**
 
 ```
+POST /api/pipeline
+{
+  "domain": "example.com",              // 必填，主域名
+  "methods": ["brute","crtsh","hackertarget"],  // 子域名收集方式
+  "wordlist": ["www","mail"],           // 可选自定义字典
+  "concurrency": 50, "workers": 500,    // DNS / 端口并发
+  "ports": "web",                       // 端口预设
+  "whois": true,                        // 是否查询 WHOIS/备案
+  "icp_api": ""                         // 自定义备案源
+}
+→ 200 {"task_id": "..."}  // SSE 中会推送 type:"stage" 阶段事件
+
 POST /api/whois
 {
   "domains": ["baidu.com", "example.org"],  // 必填，每行/逗号分隔，支持 www、URL 自动归一化

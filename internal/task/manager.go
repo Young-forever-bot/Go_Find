@@ -14,10 +14,11 @@ import (
 
 // 任务状态。
 const (
-	StatusRunning  = "running"
-	StatusDone     = "done"
-	StatusError    = "error"
-	StatusCanceled = "canceled"
+	StatusRunning    = "running"
+	StatusDone       = "done"
+	StatusError      = "error"
+	StatusCanceled   = "canceled"
+	StatusInterrupted = "interrupted" // 应用重启前未完成的任务
 )
 
 // Task 一次探测任务的完整状态。
@@ -48,6 +49,7 @@ type Manager struct {
 	cancels map[string]context.CancelFunc
 	subs    map[string]map[chan Event]struct{}
 	seq     int64
+	store   *Store // 可选持久化
 }
 
 // NewManager 创建管理器。
@@ -57,6 +59,46 @@ func NewManager() *Manager {
 		cancels: map[string]context.CancelFunc{},
 		subs:    map[string]map[chan Event]struct{}{},
 	}
+}
+
+// NewManagerWithStore 创建带持久化的管理器：从存储恢复历史任务
+// （恢复时 running 状态标记为 interrupted），任务收尾/删除时自动落盘。
+func NewManagerWithStore(store *Store) *Manager {
+	m := NewManager()
+	m.store = store
+	tasks, err := store.Load()
+	if err != nil {
+		return m
+	}
+	for _, t := range tasks {
+		if t.Status == StatusRunning {
+			t.Status = StatusInterrupted
+		}
+		if t.Results == nil {
+			t.Results = []any{}
+		}
+		if t.Logs == nil {
+			t.Logs = []model.LogEntry{}
+		}
+		m.tasks[t.ID] = t
+	}
+	return m
+}
+
+// persist 异步落盘全部任务快照。
+func (m *Manager) persist() {
+	if m.store == nil {
+		return
+	}
+	m.mu.RLock()
+	out := make([]*Task, 0, len(m.tasks))
+	for _, t := range m.tasks {
+		cp := m.snapshot(t)
+		out = append(out, &cp)
+	}
+	m.mu.RUnlock()
+	tasks := out
+	go func() { _ = m.store.Save(tasks) }()
 }
 
 // Create 新建任务并置为 running。
@@ -113,6 +155,9 @@ func (m *Manager) Delete(id string) bool {
 		delete(m.subs, id)
 	}
 	m.mu.Unlock()
+	if ok {
+		m.persist()
+	}
 	return ok
 }
 
@@ -198,12 +243,17 @@ func (m *Manager) Finish(id string, err error) {
 	m.mu.Unlock()
 	if t != nil {
 		m.publish(id, "done", map[string]any{"status": status, "error": errMsg})
+		m.persist()
 	}
 }
 
+// PublishCustom 发布无状态事件（如流水线 stage）给该任务的全部订阅者。
+func (m *Manager) PublishCustom(id, typ string, data any) {
+	m.publish(id, typ, data)
+}
+
 // Subscribe 注册一个 SSE 订阅通道，返回退订函数。
-func (m *Manager) Subscribe(id string) (<-chan Event, func()) {
-	ch := make(chan Event, 1024)
+func (m *Manager) Subscribe(id string) (<-chan Event, func()) {	ch := make(chan Event, 1024)
 	m.mu.Lock()
 	if _, ok := m.subs[id]; !ok {
 		m.subs[id] = map[chan Event]struct{}{}

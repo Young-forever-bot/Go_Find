@@ -17,6 +17,8 @@
         </div>
       </div>
       <nav id="nav">
+        <div class="nav-section">一键测绘</div>
+        <button class="nav-item" data-page="pipeline"><span class="nav-ico">🚀</span>全面测绘</button>
         <div class="nav-section">探测任务</div>
         <button class="nav-item active" data-page="subdomain"><span class="nav-ico">🌐</span>子域名收集</button>
         <button class="nav-item" data-page="portscan"><span class="nav-ico">🔌</span>端口开放探测</button>
@@ -39,6 +41,139 @@
           <span id="health-text">检测后端…</span>
         </div>
       </header>
+
+      <!-- ============ 全面测绘（流水线） ============ -->
+      <section id="page-pipeline" class="page">
+        <div class="card">
+          <div class="card-title">任务配置</div>
+          <div class="grid-2">
+            <div class="field span2">
+              <label>主域名 *（流水线：子域名收集 → 存活探测 → 端口扫描 → 服务识别 → WHOIS/备案）</label>
+              <input type="text" id="pl-domain" placeholder="example.com" />
+            </div>
+            <div class="field">
+              <label>子域名收集方式</label>
+              <div class="checks">
+                <label><input type="checkbox" id="pl-m-brute" checked /> 字典爆破</label>
+                <label><input type="checkbox" id="pl-m-crtsh" checked /> crt.sh</label>
+                <label><input type="checkbox" id="pl-m-ht" checked /> HackerTarget</label>
+              </div>
+            </div>
+            <div class="field">
+              <label>端口预设</label>
+              <select id="pl-preset">
+                <option value="web" selected>Web 常见端口</option>
+                <option value="common">常用端口（约 500 个）</option>
+                <option value="full">全端口 1-65535</option>
+                <option value="custom">自定义…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>自定义端口</label>
+              <input type="text" id="pl-ports" placeholder="80,443,8000-8100" disabled />
+            </div>
+            <div class="field">
+              <label>端口扫描并发</label>
+              <input type="number" id="pl-workers" value="500" min="1" max="5000" />
+            </div>
+            <div class="field">
+              <label>DNS 并发</label>
+              <input type="number" id="pl-concurrency" value="50" min="1" max="500" />
+            </div>
+            <div class="field span2">
+              <label>自定义字典（每行一个，留空用内置字典）</label>
+              <textarea id="pl-wordlist" rows="2" placeholder="www&#10;mail&#10;api"></textarea>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="pl-start">🚀 开始测绘</button>
+            <button class="btn danger hidden" id="pl-cancel">取消任务</button>
+            <span class="progress-text" id="pl-progress-text"></span>
+            <div class="progress-track grow"><div class="progress-bar" id="pl-progress"></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">执行进度 <span class="grow"></span><span class="progress-text" id="pl-duration"></span></div>
+          <div class="stages" id="pl-stages"></div>
+          <div class="logs" id="pl-logs"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            测绘结果
+            <span class="grow"></span>
+            <input type="text" class="table-filter" id="pl-filter" placeholder="🔍 过滤结果…" />
+            <a class="btn small" id="pl-export-csv" target="_blank">导出 CSV</a>
+            <a class="btn small" id="pl-export-json" target="_blank">导出 JSON</a>
+          </div>
+          <div class="tabs" id="pl-tabs">
+            <button class="tab active" data-tab="pl-tab-summary">📊 总览</button>
+            <button class="tab" data-tab="pl-tab-sub">🌐 子域名 <span class="badge" id="pl-c-sub">0</span></button>
+            <button class="tab" data-tab="pl-tab-probe">💚 存活站点 <span class="badge" id="pl-c-probe">0</span></button>
+            <button class="tab" data-tab="pl-tab-port">🔌 开放端口 <span class="badge" id="pl-c-port">0</span></button>
+            <button class="tab" data-tab="pl-tab-svc">🛰️ 服务识别 <span class="badge" id="pl-c-svc">0</span></button>
+            <button class="tab" data-tab="pl-tab-whois">📇 WHOIS/备案</button>
+          </div>
+
+          <div id="pl-tab-summary" class="tab-pane active">
+            <div class="summary-grid" id="pl-summary">
+              <div class="sum-item"><div class="num" id="pl-s-sub">—</div><div class="lbl">子域名</div></div>
+              <div class="sum-item"><div class="num" id="pl-s-alive">—</div><div class="lbl">存活站点</div></div>
+              <div class="sum-item"><div class="num" id="pl-s-port">—</div><div class="lbl">开放端口</div></div>
+              <div class="sum-item"><div class="num" id="pl-s-svc">—</div><div class="lbl">识别服务</div></div>
+              <div class="sum-item"><div class="num" id="pl-s-icp" style="font-size:14px">—</div><div class="lbl">备案号</div></div>
+              <div class="sum-item"><div class="num" id="pl-s-time" style="font-size:14px">—</div><div class="lbl">耗时</div></div>
+            </div>
+            <div class="muted" id="pl-notes" style="margin-top:12px; font-size:12px; line-height:1.9"></div>
+          </div>
+
+          <div id="pl-tab-sub" class="tab-pane">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>子域名</th><th>IP</th><th>来源</th></tr></thead>
+                <tbody id="pl-t-sub"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="pl-tab-probe" class="tab-pane">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>主机</th><th>URL</th><th>状态码</th><th>标题</th><th>指纹</th><th>大小</th></tr></thead>
+                <tbody id="pl-t-probe"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="pl-tab-port" class="tab-pane">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>主机</th><th>IP</th><th>端口</th><th>状态</th></tr></thead>
+                <tbody id="pl-t-port"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="pl-tab-svc" class="tab-pane">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>主机</th><th>IP</th><th>端口</th><th>服务</th><th>版本</th><th>标题/Server</th><th>Banner</th></tr></thead>
+                <tbody id="pl-t-svc"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="pl-tab-whois" class="tab-pane">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>域名</th><th>注册商</th><th>创建</th><th>到期</th><th>备案主体</th><th>备案号</th><th>备注</th></tr></thead>
+                <tbody id="pl-t-whois"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <!-- ============ 子域名收集 ============ -->
       <section id="page-subdomain" class="page active">
@@ -86,6 +221,7 @@
           <div class="card-title">
             结果 <span class="badge" id="sub-count">0</span>
             <span class="grow"></span>
+            <input type="text" class="table-filter" id="sub-filter" placeholder="🔍 过滤结果…" />
             <a class="btn small" id="sub-export-csv" target="_blank">导出 CSV</a>
             <a class="btn small" id="sub-export-json" target="_blank">导出 JSON</a>
           </div>
@@ -142,6 +278,7 @@
           <div class="card-title">
             结果 <span class="badge" id="ps-count">0</span>
             <span class="grow"></span>
+            <input type="text" class="table-filter" id="ps-filter" placeholder="🔍 过滤结果…" />
             <a class="btn small" id="ps-export-csv" target="_blank">导出 CSV</a>
             <a class="btn small" id="ps-export-json" target="_blank">导出 JSON</a>
           </div>
@@ -192,6 +329,7 @@
           <div class="card-title">
             结果 <span class="badge" id="sv-count">0</span>
             <span class="grow"></span>
+            <input type="text" class="table-filter" id="sv-filter" placeholder="🔍 过滤结果…" />
             <a class="btn small" id="sv-export-csv" target="_blank">导出 CSV</a>
             <a class="btn small" id="sv-export-json" target="_blank">导出 JSON</a>
           </div>
@@ -242,6 +380,7 @@
           <div class="card-title">
             结果 <span class="badge" id="wi-count">0</span>
             <span class="grow"></span>
+            <input type="text" class="table-filter" id="wi-filter" placeholder="🔍 过滤结果…" />
             <a class="btn small" id="wi-export-csv" target="_blank">导出 CSV</a>
             <a class="btn small" id="wi-export-json" target="_blank">导出 JSON</a>
           </div>
@@ -273,6 +412,7 @@
         <div class="card hidden" id="tk-detail-card">
           <div class="card-title">任务详情 <span class="muted" id="tk-detail-id"></span>
             <span class="grow"></span>
+            <input type="text" class="table-filter" id="tk-filter" placeholder="🔍 过滤…" />
             <a class="btn small" id="tk-export-csv" target="_blank">导出 CSV</a>
             <a class="btn small" id="tk-export-json" target="_blank">导出 JSON</a>
           </div>

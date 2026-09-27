@@ -30,6 +30,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/portscan", s.handlePortScan)
 	mux.HandleFunc("POST /api/service", s.handleService)
 	mux.HandleFunc("POST /api/whois", s.handleWhois)
+	mux.HandleFunc("POST /api/pipeline", s.handlePipeline)
 	mux.HandleFunc("GET /api/tasks", s.handleTaskList)
 	mux.HandleFunc("GET /api/tasks/{id}", s.handleTaskGet)
 	mux.HandleFunc("DELETE /api/tasks/{id}", s.handleTaskDelete)

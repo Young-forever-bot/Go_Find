@@ -11,7 +11,7 @@ const API = (location.protocol === 'file:')
 const $ = (id) => document.getElementById(id);
 
 // ---------- 页面切换 ----------
-const PAGE_TITLES = { subdomain: '子域名收集', portscan: '端口开放探测', service: '端口服务识别', whois: 'WHOIS / 备案查询', tasks: '任务中心' };
+const PAGE_TITLES = { pipeline: '全面测绘', subdomain: '子域名收集', portscan: '端口开放探测', service: '端口服务识别', whois: 'WHOIS / 备案查询', tasks: '任务中心' };
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
@@ -44,14 +44,15 @@ pollHealth();
 // ---------- 通用任务运行器 ----------
 // 每个功能页独立任务状态；done 后允许再次提交。
 const pageState = {
+  pipeline:  { taskId: null, es: null, running: false },
   subdomain: { taskId: null, es: null, running: false },
   portscan:  { taskId: null, es: null, running: false },
   service:   { taskId: null, es: null, running: false },
   whois:     { taskId: null, es: null, running: false },
 };
 
-const PAGE_PREFIX = { subdomain: 'sub', portscan: 'ps', service: 'sv', whois: 'wi' };
-const PAGE_START_LABEL = { subdomain: '开始收集', portscan: '开始扫描', service: '开始识别', whois: '开始查询' };
+const PAGE_PREFIX = { pipeline: 'pl', subdomain: 'sub', portscan: 'ps', service: 'sv', whois: 'wi' };
+const PAGE_START_LABEL = { pipeline: '🚀 开始测绘', subdomain: '开始收集', portscan: '开始扫描', service: '开始识别', whois: '开始查询' };
 
 function setRunning(page, running) {
   pageState[page].running = running;
@@ -323,12 +324,13 @@ async function cancelTask(page) {
 }
 
 // ---------- 任务中心 ----------
-const TASK_TYPE_NAMES = { subdomain: '子域名', portscan: '端口扫描', service: '服务识别', whois: 'WHOIS/备案' };
+const TASK_TYPE_NAMES = { pipeline: '全面测绘', subdomain: '子域名', portscan: '端口扫描', service: '服务识别', whois: 'WHOIS/备案' };
 const DETAIL_COLUMNS = {
   subdomain: ['子域名', 'IP', '来源'],
   portscan: ['主机', 'IP', '端口', '状态'],
   service: ['主机', 'IP', '端口', '服务', '版本', '标题', 'Banner'],
   whois: ['域名', '注册商', '创建时间', '到期时间', 'DNS', '备案主体', '备案号'],
+  pipeline: ['阶段', '摘要'],
 };
 
 async function refreshTaskList() {
@@ -390,6 +392,15 @@ async function showTaskDetail(id) {
     (t.results || []).forEach(r => {
       const tr = document.createElement('tr');
       let cells;
+      if (t.type === 'pipeline') {
+        const stageTag = el('span', 'tag type-service', r.stage || 'result');
+        const summary = el('span', '', describePipelineResult(r));
+        const td1 = el('td'); td1.appendChild(stageTag);
+        const td2 = el('td', 'mono wrap'); td2.appendChild(summary);
+        tr.appendChild(td1); tr.appendChild(td2);
+        body.appendChild(tr);
+        return;
+      }
       if (t.type === 'subdomain') cells = [r.subdomain, (r.ips || []).join(', '), r.source];
       else if (t.type === 'portscan') cells = [r.host, r.ip, String(r.port), r.status];
       else if (t.type === 'whois') cells = [r.domain, r.registrar || r.whois_error || '', r.creation_date || '',
@@ -417,4 +428,248 @@ async function showTaskDetail(id) {
   } catch (err) {
     alert('加载任务详情失败: ' + err.message);
   }
+}
+
+// ---------- 通用：结果表格过滤 ----------
+function attachFilter(inputId, wrapIds) {
+  const input = $(inputId);
+  if (!input) return;
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    wrapIds.forEach(wid => {
+      const wrap = $(wid);
+      if (!wrap) return;
+      wrap.querySelectorAll('tbody tr').forEach(tr => {
+        tr.style.display = (!q || tr.textContent.toLowerCase().includes(q)) ? '' : 'none';
+      });
+    });
+  });
+}
+attachFilter('sub-filter', ['sub-results']);
+attachFilter('ps-filter', ['ps-results']);
+attachFilter('sv-filter', ['sv-results']);
+attachFilter('wi-filter', ['wi-results']);
+attachFilter('tk-filter', ['tk-detail-body']);
+attachFilter('pl-filter', ['pl-t-sub', 'pl-t-probe', 'pl-t-port', 'pl-t-svc', 'pl-t-whois']);
+
+// ---------- 全面测绘（流水线） ----------
+const PL_STAGES = ['subdomain', 'probe', 'portscan', 'service', 'whois'];
+const PL_STAGE_NAMES = { subdomain: '子域名收集', probe: '存活探测', portscan: '端口扫描', service: '服务识别', whois: 'WHOIS/备案' };
+const PL_STAGE_ICONS = { subdomain: '🌐', probe: '💚', portscan: '🔌', service: '🛰️', whois: '📇' };
+let plStageState = {};   // key -> {status, note}
+let plCurProgress = { done: 0, total: 0 };
+
+function renderStages() {
+  const box = $('pl-stages');
+  box.innerHTML = '';
+  PL_STAGES.forEach(key => {
+    const st = plStageState[key] || { status: 'pending', note: '' };
+    const row = document.createElement('div');
+    row.className = 'stage-row';
+    const ico = document.createElement('span');
+    ico.className = 'stage-ico';
+    ico.textContent = PL_STAGE_ICONS[key] || '•';
+    const name = document.createElement('span');
+    name.className = 'stage-name';
+    name.textContent = PL_STAGE_NAMES[key];
+    const tag = document.createElement('span');
+    tag.className = 'tag stage-' + st.status;
+    tag.textContent = { pending: '待执行', running: '进行中', ok: '完成', fail: '失败', skip: '跳过' }[st.status] || st.status;
+    row.appendChild(ico); row.appendChild(name); row.appendChild(tag);
+    if (st.note) {
+      const note = document.createElement('span');
+      note.className = 'stage-note mono';
+      note.textContent = st.note;
+      row.appendChild(note);
+    }
+    if (st.status === 'running' && plCurProgress.total > 0) {
+      const prog = document.createElement('span');
+      prog.className = 'stage-note mono grow';
+      prog.style.textAlign = 'right';
+      prog.textContent = `${plCurProgress.done}/${plCurProgress.total}`;
+      row.appendChild(prog);
+    } else {
+      const pad = document.createElement('span');
+      pad.className = 'grow';
+      row.appendChild(pad);
+    }
+    box.appendChild(row);
+  });
+  // 总进度 = 完成阶段比例 + 当前阶段内部进度
+  const doneStages = PL_STAGES.filter(k => ['ok', 'skip', 'fail'].includes((plStageState[k] || {}).status)).length;
+  const curIdx = PL_STAGES.findIndex(k => (plStageState[k] || {}).status === 'running');
+  let pct = doneStages / PL_STAGES.length * 100;
+  if (curIdx >= 0 && plCurProgress.total > 0) {
+    pct += (plCurProgress.done / plCurProgress.total) / PL_STAGES.length * 100;
+  }
+  $('pl-progress').style.width = Math.min(100, pct) + '%';
+  $('pl-progress-text').textContent = Math.round(pct) + '%';
+}
+
+function resetPipelineUI() {
+  plStageState = {};
+  plCurProgress = { done: 0, total: 0 };
+  renderStages();
+  ['pl-t-sub', 'pl-t-probe', 'pl-t-port', 'pl-t-svc', 'pl-t-whois'].forEach(id => { $(id).innerHTML = ''; });
+  ['pl-c-sub', 'pl-c-probe', 'pl-c-port', 'pl-c-svc'].forEach(id => { $(id).textContent = '0'; });
+  ['pl-s-sub', 'pl-s-alive', 'pl-s-port', 'pl-s-svc', 'pl-s-icp', 'pl-s-time'].forEach(id => { $(id).textContent = '—'; });
+  $('pl-notes').textContent = '';
+  $('pl-duration').textContent = '';
+  $('pl-progress').style.width = '0';
+  $('pl-progress-text').textContent = '';
+  const logs = $('pl-logs');
+  logs.innerHTML = '';
+  logs.classList.remove('show');
+  ['pl-export-csv', 'pl-export-json'].forEach(id => { $(id).removeAttribute('href'); $(id).classList.add('hidden'); });
+}
+
+function appendCell(tr, c) {
+  const td = document.createElement('td');
+  if (typeof c === 'string') td.textContent = c;
+  else if (c instanceof HTMLElement) td.appendChild(c);
+  else td.textContent = String(c ?? '');
+  tr.appendChild(td);
+}
+
+function bump(id) {
+  const n = $(id);
+  n.textContent = String(Number(n.textContent) + 1);
+}
+
+// 按数据形态把流水线结果路由到对应标签表
+function routePipelineResult(r) {
+  if (r.stage === 'summary' || (r.duration && r.subdomains !== undefined)) {
+    $('pl-s-sub').textContent = r.subdomains ?? '—';
+    $('pl-s-alive').textContent = r.alive ?? '—';
+    $('pl-s-port').textContent = r.open_ports ?? '—';
+    $('pl-s-svc').textContent = r.services ?? '—';
+    $('pl-s-icp').textContent = r.icp || '未备案';
+    $('pl-s-time').textContent = r.duration || '—';
+    $('pl-notes').textContent = (r.notes || []).join('；');
+    $('pl-duration').textContent = '耗时 ' + (r.duration || '');
+    return;
+  }
+  const addRows = (tbodyId, cells) => {
+    const tr = document.createElement('tr');
+    cells.forEach(c => appendCell(tr, c));
+    $(tbodyId).prepend(tr);
+  };
+  if (r.subdomain) {
+    addRows('pl-t-sub', [r.subdomain, (r.ips || []).join(', '), r.source || '']);
+    bump('pl-c-sub');
+  } else if (r.url !== undefined || r.alive !== undefined) {
+    const alive = r.alive ? el('span', 'status-open', String(r.status_code || 'ok')) : el('span', 'muted', '超时');
+    addRows('pl-t-probe', [r.host, r.url || '—', alive, r.title || '', (r.fingerprints || []).join(' / '), r.length ? String(r.length) : '']);
+    bump('pl-c-probe');
+  } else if (r.port && r.status) {
+    const st = el('span', 'status-open', r.status);
+    addRows('pl-t-port', [r.host, r.ip || '', String(r.port), st]);
+    bump('pl-c-port');
+  } else if (r.service) {
+    const httpPart = r.http ? `${r.http.status_code || ''} ${r.http.title || ''} ${r.http.server ? '| ' + r.http.server : ''}`.trim() : '';
+    addRows('pl-t-svc', [r.host, r.ip || '', String(r.port), r.service, r.version || '', httpPart, r.banner || '']);
+    bump('pl-c-svc');
+  } else if (r.registrable || r.registrar || r.icp) {
+    const icpName = r.icp && r.icp.name ? r.icp.name : '';
+    const icpNo = r.icp && r.icp.icp ? r.icp.icp : '';
+    const errs = [r.whois_error, r.icp_error].filter(Boolean).join('；');
+    addRows('pl-t-whois', [r.domain, r.registrar || '—', r.creation_date || '', r.expiry_date || '', icpName, icpNo, errs]);
+  }
+}
+
+// 标签页切换
+document.querySelectorAll('#pl-tabs .tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#pl-tabs .tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#page-pipeline .tab-pane').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    $(btn.dataset.tab).classList.add('active');
+  });
+});
+
+$('pl-preset').addEventListener('change', () => {
+  const custom = $('pl-preset').value === 'custom';
+  $('pl-ports').disabled = !custom;
+  if (custom) $('pl-ports').focus();
+});
+
+$('pl-start').addEventListener('click', async () => {
+  const domain = $('pl-domain').value.trim();
+  if (!domain) { alert('请输入主域名'); return; }
+  resetPipelineUI();
+  setRunning('pipeline', true);
+  const methods = [];
+  if ($('pl-m-brute').checked) methods.push('brute');
+  if ($('pl-m-crtsh').checked) methods.push('crtsh');
+  if ($('pl-m-ht').checked) methods.push('hackertarget');
+  const preset = $('pl-preset').value;
+  const ports = preset === 'custom' ? $('pl-ports').value.trim() : preset;
+  const wordlist = $('pl-wordlist').value.split('\n').map(x => x.trim()).filter(Boolean);
+  try {
+    const res = await fetch(`${API}/api/pipeline`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        domain, methods, ports, wordlist,
+        concurrency: Number($('pl-concurrency').value) || 50,
+        workers: Number($('pl-workers').value) || 500,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const taskId = data.task_id;
+    pageState.pipeline.taskId = taskId;
+    // 首个 stage 事件可能在 SSE 订阅前发出，这里乐观标记第一阶段进行中
+    if (!plStageState.subdomain || plStageState.subdomain.status === 'pending') {
+      plStageState.subdomain = { status: 'running', note: '' };
+      renderStages();
+    }
+    $('pl-export-csv').href = `${API}/api/tasks/${taskId}/export?format=csv`;
+    $('pl-export-json').href = `${API}/api/tasks/${taskId}/export?format=json`;
+    $('pl-export-csv').classList.remove('hidden');
+    $('pl-export-json').classList.remove('hidden');
+
+    const es = new EventSource(`${API}/api/tasks/${taskId}/events`);
+    pageState.pipeline.es = es;
+    es.onmessage = (e) => {
+      const ev = JSON.parse(e.data);
+      if (ev.type === 'snapshot') {
+        // 恢复：按快照结果逐条路由（stage 进度状态不可恢复，仅恢复结果）
+        (ev.data.results || []).forEach(r => routePipelineResult(r));
+        (ev.data.logs || []).forEach(l => appendLog('pl', l));
+      } else if (ev.type === 'stage') {
+        plStageState[ev.data.key] = { status: ev.data.status, note: ev.data.note || '' };
+        plCurProgress = { done: 0, total: 0 };
+        renderStages();
+      } else if (ev.type === 'log') {
+        appendLog('pl', ev.data);
+      } else if (ev.type === 'progress') {
+        plCurProgress = ev.data;
+        renderStages();
+      } else if (ev.type === 'result') {
+        routePipelineResult(ev.data);
+      } else if (ev.type === 'done') {
+        es.close();
+        pageState.pipeline.es = null;
+        setRunning('pipeline', false);
+        if (ev.data.status === 'error') appendLog('pl', { time: new Date().toISOString(), level: 'error', msg: '任务失败: ' + (ev.data.error || '') });
+      }
+    };
+  } catch (err) {
+    appendLog('pl', { time: new Date().toISOString(), level: 'error', msg: err.message });
+    setRunning('pipeline', false);
+  }
+});
+
+$('pl-cancel').addEventListener('click', () => cancelTask('pipeline'));
+
+// 任务中心：pipeline 类型摘要行
+function describePipelineResult(r) {
+  if (r.stage === 'summary') return `汇总: 子域名 ${r.subdomains} · 存活 ${r.alive} · 端口 ${r.open_ports} · 服务 ${r.services} · 耗时 ${r.duration}`;
+  if (r.subdomain) return `${r.subdomain}  [${(r.ips || []).join(', ')}]  来源:${r.source || ''}`;
+  if (r.url !== undefined || r.alive !== undefined) return `${r.alive ? '存活' : '超时'} ${r.url || r.host}  ${r.title || ''} ${(r.fingerprints || []).join(',')}`;
+  if (r.port && r.status) return `${r.host} (${r.ip}):${r.port} ${r.status}`;
+  if (r.service) return `${r.host}:${r.port} ${r.service} ${r.version || ''} ${r.http && r.http.title ? '| ' + r.http.title : ''}`;
+  if (r.registrable || r.registrar) return `${r.domain} 注册商:${r.registrar || '—'} 备案:${(r.icp && r.icp.icp) || r.icp_error || '—'}`;
+  return JSON.stringify(r).slice(0, 120);
 }

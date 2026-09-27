@@ -18,6 +18,9 @@ var csvColumns = map[string][]string{
 	"whois": {"domain", "registrable", "registrar", "creation_date", "expiry_date", "status",
 		"name_servers", "icp.name", "icp.type", "icp.icp", "icp.site", "icp.time",
 		"whois_error", "icp_error"},
+	"pipeline": {"stage", "subdomain", "ips", "host", "url", "alive", "status_code", "title",
+		"fingerprints", "ip", "port", "status", "service", "version", "banner",
+		"domain", "registrar", "icp", "subdomains", "open_ports", "duration"},
 }
 
 // handleTaskExport GET /api/tasks/{id}/export?format=csv|json

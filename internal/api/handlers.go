@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"gofind/internal/pipeline"
 	"gofind/internal/portscan"
 	"gofind/internal/service"
 	"gofind/internal/subdomain"
@@ -182,5 +183,56 @@ func (s *Server) handleWhois(w http.ResponseWriter, r *http.Request) {
 	}
 	t := s.mgr.Create("whois", params)
 	go s.runWhois(t.ID, opts)
+	writeJSON(w, http.StatusOK, map[string]any{"task_id": t.ID})
+}
+
+// handlePipeline POST /api/pipeline —— 一键全面测绘。
+func (s *Server) handlePipeline(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Domain      string   `json:"domain"`
+		Methods     []string `json:"methods"`
+		Wordlist    []string `json:"wordlist"`
+		Concurrency int      `json:"concurrency"`
+		DNSServer   string   `json:"dns"`
+		TimeoutMs   int      `json:"timeout_ms"`
+		Ports       string   `json:"ports"`
+		Workers     int      `json:"workers"`
+		Whois       *bool    `json:"whois"`
+		ICPEndpoint string   `json:"icp_api"`
+	}
+	if !bindJSON(w, r, &req) {
+		return
+	}
+	domain := strings.ToLower(strings.TrimSpace(req.Domain))
+	if domain == "" || !strings.Contains(domain, ".") {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "需要提供有效域名，例如 example.com"})
+		return
+	}
+	opts := pipeline.Options{
+		Domain:      domain,
+		Methods:     req.Methods,
+		Wordlist:    req.Wordlist,
+		Concurrency: req.Concurrency,
+		DNSServer:   strings.TrimSpace(req.DNSServer),
+		TimeoutMs:   req.TimeoutMs,
+		Ports:       strings.TrimSpace(req.Ports),
+		Workers:     req.Workers,
+		DoWhois:     req.Whois == nil || *req.Whois,
+		ICPEndpoint: strings.TrimSpace(req.ICPEndpoint),
+	}
+	params := map[string]any{
+		"domain":       domain,
+		"methods":      req.Methods,
+		"wordlist_len": len(req.Wordlist),
+		"concurrency":  req.Concurrency,
+		"dns":          req.DNSServer,
+		"timeout_ms":   req.TimeoutMs,
+		"ports":        opts.Ports,
+		"workers":      req.Workers,
+		"whois":        opts.DoWhois,
+		"icp_api":      req.ICPEndpoint,
+	}
+	t := s.mgr.Create("pipeline", params)
+	go s.runPipeline(t.ID, opts)
 	writeJSON(w, http.StatusOK, map[string]any{"task_id": t.ID})
 }
